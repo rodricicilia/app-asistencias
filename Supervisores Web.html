@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registrar Asistencia - Supervisor</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 { text-align: center; color: #333; }
+        .info-alumno {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .info-alumno h3 { margin: 0 0 10px 0; color: #1565c0; }
+        .info-alumno p { margin: 5px 0; font-size: 1.1rem; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1rem;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .resultado {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            display: none;
+        }
+        .resultado-success { background: #d4edda; color: #155724; }
+        .resultado-error { background: #f8d7da; color: #721c24; }
+        .registro-form {
+            background: #f0f8ff;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+        .footer { text-align: center; margin-top: 20px; font-size: 0.7rem; color: #999; }
+        .info-supervisor {
+            background: #e8f5e9;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .qr-invalido {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📝 Registrar Asistencia</h1>
+        
+        <div id="contenidoPrincipal">
+            <!-- El contenido se carga dinámicamente -->
+        </div>
+        
+        <div class="footer">
+            Escaneaste el QR del alumno para registrar su asistencia
+        </div>
+    </div>
+
+    <script>
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzyxNIAwY5mLOPt_4LUwAv1ojfyGFZsgWyF0dnVPZWINF4Pojys_diTeOfbPAB-iUYHlA/exec';
+        
+        let supervisorActual = null;
+        let alumnoData = null;
+        let fechaQR = null;
+        
+        function mostrarResultado(mensaje, tipo, elementoId = 'contenidoPrincipal') {
+            const div = document.createElement('div');
+            div.className = `resultado resultado-${tipo}`;
+            div.textContent = mensaje;
+            div.style.display = 'block';
+            
+            const container = document.getElementById(elementoId);
+            const existing = container.querySelector('.resultado');
+            if (existing) existing.remove();
+            container.appendChild(div);
+            
+            setTimeout(() => div.remove(), 5000);
+        }
+        
+        async function guardarSupervisor(nombre, lugarTrabajo) {
+            await fetch(`${APPS_SCRIPT_URL}?action=registrarSupervisor`, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ nombre, lugarTrabajo })
+            });
+            
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            const response = await fetch(`${APPS_SCRIPT_URL}?action=buscarSupervisorPorNombre&nombre=${encodeURIComponent(nombre)}`);
+            return await response.json();
+        }
+        
+        async function registrarAsistencia(idAlumno, idSupervisor) {
+            await fetch(`${APPS_SCRIPT_URL}?action=registrarAsistencia`, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ idAlumno, idSupervisor })
+            });
+            return { success: true };
+        }
+        
+        function mostrarFormularioSupervisor() {
+            const container = document.getElementById('contenidoPrincipal');
+            container.innerHTML = `
+                <div class="registro-form">
+                    <h3>📝 Primero, registrate como supervisor</h3>
+                    <p>Esto solo se hace una vez</p>
+                    <div class="form-group">
+                        <label>👤 Tu nombre completo</label>
+                        <input type="text" id="supNombre" placeholder="Ej: Carlos López">
+                    </div>
+                    <div class="form-group">
+                        <label>🏢 Lugar donde trabajás</label>
+                        <input type="text" id="supLugar" placeholder="Ej: Empresa X">
+                    </div>
+                    <button id="btnRegistrarSupervisor">💾 Guardar y registrar asistencia</button>
+                </div>
+            `;
+            
+            document.getElementById('btnRegistrarSupervisor').addEventListener('click', async () => {
+                const nombre = document.getElementById('supNombre').value;
+                const lugarTrabajo = document.getElementById('supLugar').value;
+                
+                if (!nombre || !lugarTrabajo) {
+                    mostrarResultado('Completá ambos campos', 'error');
+                    return;
+                }
+                
+                const btn = document.getElementById('btnRegistrarSupervisor');
+                btn.disabled = true;
+                btn.innerHTML = 'Guardando...';
+                
+                try {
+                    const supervisor = await guardarSupervisor(nombre, lugarTrabajo);
+                    if (supervisor && supervisor.idSupervisor) {
+                        supervisorActual = supervisor;
+                        localStorage.setItem('supervisorActual', JSON.stringify(supervisorActual));
+                        mostrarFormularioRegistro();
+                        mostrarResultado('✅ Supervisor registrado', 'success');
+                    } else {
+                        mostrarResultado('Error al registrar', 'error');
+                    }
+                } catch (error) {
+                    mostrarResultado('Error de conexión', 'error');
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        }
+        
+        function mostrarFormularioRegistro() {
+            const container = document.getElementById('contenidoPrincipal');
+            container.innerHTML = `
+                <div class="info-supervisor" id="infoSupervisor"></div>
+                
+                <div class="info-alumno">
+                    <h3>🎓 Alumno</h3>
+                    <p><strong>ID:</strong> ${alumnoData.idAlumno}</p>
+                    <p><strong>Nombre:</strong> ${alumnoData.nombre} ${alumnoData.apellido}</p>
+                    <p><strong>DNI:</strong> ${alumnoData.dni}</p>
+                    <p><strong>Lugar de práctica:</strong> ${alumnoData.lugarPractica}</p>
+                </div>
+                
+                <div class="info-alumno" style="background:#fff3cd;">
+                    <h3>📅 Fecha del QR</h3>
+                    <p><strong>${fechaQR}</strong></p>
+                    <p>${fechaQR === new Date().toISOString().split('T')[0] ? '✅ QR válido' : '❌ QR vencido'}</p>
+                </div>
+                
+                <button id="btnConfirmar" ${fechaQR !== new Date().toISOString().split('T')[0] ? 'disabled' : ''}>✅ Confirmar asistencia</button>
+            `;
+            
+            document.getElementById('infoSupervisor').innerHTML = `👤 Supervisor: ${supervisorActual.nombre} | 🏢 ${supervisorActual.lugarTrabajo}`;
+            
+            document.getElementById('btnConfirmar').addEventListener('click', async () => {
+                const btn = document.getElementById('btnConfirmar');
+                btn.disabled = true;
+                btn.innerHTML = 'Registrando...';
+                
+                try {
+                    await registrarAsistencia(alumnoData.idAlumno, supervisorActual.idSupervisor);
+                    container.innerHTML = `
+                        <div class="resultado resultado-success" style="display:block; text-align:center; padding:30px;">
+                            <h2>✅ ¡Asistencia registrada!</h2>
+                            <p>Fecha: ${new Date().toLocaleDateString()}</p>
+                            <p>Hora: ${new Date().toLocaleTimeString()}</p>
+                            <p>Alumno: ${alumnoData.nombre} ${alumnoData.apellido}</p>
+                            <p>Supervisor: ${supervisorActual.nombre}</p>
+                            <button onclick="location.reload()" style="margin-top:20px;">📷 Escanear otro QR</button>
+                        </div>
+                    `;
+                } catch (error) {
+                    mostrarResultado('Error al registrar asistencia', 'error');
+                    btn.disabled = false;
+                    btn.innerHTML = '✅ Confirmar asistencia';
+                }
+            });
+        }
+        
+        async function verificarAlumno(idAlumno) {
+            try {
+                const response = await fetch(`${APPS_SCRIPT_URL}?action=buscarAlumnoPorID&id=${idAlumno}`);
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                return null;
+            }
+        }
+        
+        async function iniciar() {
+            // Obtener parámetros de la URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const idAlumno = urlParams.get('alumno');
+            const fecha = urlParams.get('fecha');
+            
+            if (!idAlumno || !fecha) {
+                document.getElementById('contenidoPrincipal').innerHTML = `
+                    <div class="qr-invalido">
+                        <h2>❌ QR inválido</h2>
+                        <p>Este QR no es válido para registrar asistencia.</p>
+                        <p>Asegurate de escanear el QR generado por la app del alumno.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            fechaQR = fecha;
+            const hoy = new Date().toISOString().split('T')[0];
+            
+            if (fecha !== hoy) {
+                document.getElementById('contenidoPrincipal').innerHTML = `
+                    <div class="qr-invalido">
+                        <h2>⏰ QR VENCIDO</h2>
+                        <p>Fecha del QR: ${fecha}</p>
+                        <p>Fecha actual: ${hoy}</p>
+                        <p>El alumno debe generar un QR nuevo (válido por 24 horas).</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Buscar alumno
+            alumnoData = await verificarAlumno(idAlumno);
+            
+            if (!alumnoData || !alumnoData.idAlumno) {
+                document.getElementById('contenidoPrincipal').innerHTML = `
+                    <div class="qr-invalido">
+                        <h2>❌ Alumno no encontrado</h2>
+                        <p>El ID ${idAlumno} no está registrado en el sistema.</p>
+                        <p>El alumno debe registrarse primero en la app del alumno.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Verificar si el supervisor ya está guardado
+            const guardado = localStorage.getItem('supervisorActual');
+            if (guardado) {
+                try {
+                    supervisorActual = JSON.parse(guardado);
+                    mostrarFormularioRegistro();
+                } catch(e) {
+                    mostrarFormularioSupervisor();
+                }
+            } else {
+                mostrarFormularioSupervisor();
+            }
+        }
+        
+        iniciar();
+    </script>
+</body>
+</html>
