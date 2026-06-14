@@ -24,13 +24,16 @@
             width: 100%;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        h1 { text-align: center; color: #333; }
-        .info-alumno {
-            background: #e3f2fd;
-            padding: 15px;
+        h1 { text-align: center; color: #333; margin-bottom: 20px; }
+        h3 { color: #333; margin-bottom: 15px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
             border-radius: 10px;
-            margin: 15px 0;
-            text-align: center;
+            font-size: 1rem;
         }
         button {
             width: 100%;
@@ -42,8 +45,27 @@
             font-size: 1.1rem;
             font-weight: bold;
             cursor: pointer;
+            margin-top: 10px;
         }
-        button:disabled { opacity: 0.6; }
+        .info-supervisor {
+            background: #e8f5e9;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .reader-container {
+            text-align: center;
+            margin-top: 15px;
+        }
+        #reader {
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            border-radius: 15px;
+            overflow: hidden;
+        }
         .resultado {
             margin-top: 20px;
             padding: 15px;
@@ -52,47 +74,147 @@
         }
         .success { background: #d4edda; color: #155724; }
         .error { background: #f8d7da; color: #721c24; }
-        .loading { text-align: center; padding: 20px; }
+        .loading { text-align: center; padding: 20px; color: #666; }
         .footer { text-align: center; margin-top: 20px; font-size: 0.7rem; color: #999; }
+        .btn-cerrar-sesion {
+            background: #dc3545;
+            margin-top: 10px;
+        }
     </style>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
     <div class="container">
         <h1>📷 App Supervisor</h1>
-        <div id="contenido">
-            <div class="loading">
-                <p>Iniciando cámara...</p>
-                <div id="reader" style="width:100%; max-width:500px; margin:0 auto;"></div>
-                <button id="btnIniciar" style="margin-top:15px;">📷 Iniciar escáner</button>
-            </div>
-        </div>
+        
+        <div id="contenido"></div>
+        
         <div class="footer">
             Escaneá el QR que te muestra el alumno
         </div>
     </div>
 
     <script>
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyKYIFV9suYC7u2cMy8wwghkuv4GEp99oRCHGj6smBQauTJ1QUQmjBmE4BPfTaVcFi_cg/exec';
-        let html5QrCode = null;
+        // ⚠️ CAMBIAR POR LA URL DE TU APPS SCRIPT ⚠️
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyk1163VEGxC9mDnFnosd_XjNPn6cBKliAYvd4uVhm8OYUDCzRHlP2nyDLgf-nLE3JN4A/exec';
         
-        function mostrarResultado(mensaje, tipo) {
-            const div = document.createElement('div');
-            div.className = `resultado ${tipo}`;
-            div.innerHTML = mensaje;
-            const contenido = document.getElementById('contenido');
-            const existing = contenido.querySelector('.resultado');
-            if (existing) existing.remove();
-            contenido.appendChild(div);
-            setTimeout(() => div.remove(), 5000);
+        let html5QrCode = null;
+        let supervisorActual = null;
+        
+        function guardarSupervisorLocal(supervisor) {
+            localStorage.setItem('supervisorActual', JSON.stringify(supervisor));
+            supervisorActual = supervisor;
         }
         
-        async function registrarAsistencia(dni, fecha) {
+        function cerrarSesion() {
+            localStorage.removeItem('supervisorActual');
+            supervisorActual = null;
+            mostrarPantallaRegistro();
+        }
+        
+        async function registrarSupervisor(nombre, lugarTrabajo) {
             try {
-                const response = await fetch(`${APPS_SCRIPT_URL}?action=registrar&dni=${dni}&fecha=${fecha}`);
+                const formData = new URLSearchParams();
+                formData.append('nombre', nombre);
+                formData.append('lugarTrabajo', lugarTrabajo);
+                
+                const response = await fetch(`${APPS_SCRIPT_URL}?action=registrarSupervisor`, {
+                    method: 'POST',
+                    body: formData
+                });
                 return await response.json();
             } catch(e) {
                 return { success: false, error: e.message };
+            }
+        }
+        
+        async function registrarAsistencia(dni, fecha, idSupervisor) {
+            try {
+                const url = `${APPS_SCRIPT_URL}?action=registrar&dni=${dni}&fecha=${fecha}&idSupervisor=${idSupervisor}`;
+                const response = await fetch(url);
+                return await response.json();
+            } catch(e) {
+                return { success: false, error: e.message };
+            }
+        }
+        
+        function mostrarPantallaRegistro() {
+            const container = document.getElementById('contenido');
+            container.innerHTML = `
+                <div class="registro-form">
+                    <h3>📝 Registro de Supervisor</h3>
+                    <p>Completá tus datos para continuar</p>
+                    <div class="form-group">
+                        <label>👤 Nombre completo</label>
+                        <input type="text" id="supNombre" placeholder="Ej: Carlos López">
+                    </div>
+                    <div class="form-group">
+                        <label>🏢 Lugar donde trabajás</label>
+                        <input type="text" id="supLugar" placeholder="Ej: Empresa X">
+                    </div>
+                    <button id="btnRegistrar">💾 Registrarme</button>
+                </div>
+            `;
+            
+            document.getElementById('btnRegistrar').addEventListener('click', async () => {
+                const nombre = document.getElementById('supNombre').value;
+                const lugar = document.getElementById('supLugar').value;
+                
+                if (!nombre || !lugar) {
+                    alert('Completá ambos campos');
+                    return;
+                }
+                
+                const btn = document.getElementById('btnRegistrar');
+                btn.disabled = true;
+                btn.innerHTML = 'Registrando...';
+                
+                const resultado = await registrarSupervisor(nombre, lugar);
+                
+                if (resultado.success) {
+                    guardarSupervisorLocal(resultado.supervisor);
+                    mostrarPantallaScanner();
+                } else {
+                    alert('Error: ' + resultado.error);
+                    btn.disabled = false;
+                    btn.innerHTML = '💾 Registrarme';
+                }
+            });
+        }
+        
+        function mostrarPantallaScanner() {
+            const container = document.getElementById('contenido');
+            container.innerHTML = `
+                <div class="info-supervisor" id="infoSupervisor"></div>
+                <div class="reader-container">
+                    <div id="reader"></div>
+                    <button id="btnIniciar" style="margin-top:15px;">📷 Iniciar cámara</button>
+                </div>
+                <button id="btnCerrarSesion" class="btn-cerrar-sesion">🚪 Cambiar supervisor</button>
+                <div id="mensaje" class="loading" style="margin-top:15px;">Presioná "Iniciar cámara" y escaneá el QR</div>
+            `;
+            
+            document.getElementById('infoSupervisor').innerHTML = `👤 Supervisor: ${supervisorActual.nombre} | 🏢 ${supervisorActual.lugarTrabajo}`;
+            
+            document.getElementById('btnCerrarSesion').addEventListener('click', () => {
+                if (html5QrCode) {
+                    html5QrCode.stop();
+                    html5QrCode = null;
+                }
+                cerrarSesion();
+            });
+            
+            document.getElementById('btnIniciar').addEventListener('click', () => iniciarScanner());
+            
+            // Iniciar automáticamente
+            iniciarScanner();
+        }
+        
+        function mostrarMensaje(texto, tipo) {
+            const div = document.getElementById('mensaje');
+            if (div) {
+                div.innerHTML = texto;
+                div.className = tipo;
             }
         }
         
@@ -100,9 +222,9 @@
             if (html5QrCode) {
                 await html5QrCode.stop();
                 html5QrCode = null;
+                document.getElementById('btnIniciar').style.display = 'block';
             }
             
-            // Extraer DNI y fecha de la URL
             let dni = null;
             let fecha = null;
             
@@ -111,40 +233,30 @@
                 dni = url.searchParams.get('dni');
                 fecha = url.searchParams.get('fecha');
             } catch(e) {
-                // Si no es URL válida, probar formato simple
                 const params = new URLSearchParams(decodedText.split('?')[1]);
                 dni = params.get('dni');
                 fecha = params.get('fecha');
             }
             
             if (!dni || !fecha) {
-                mostrarResultado('❌ QR inválido: No contiene DNI', 'error');
+                mostrarMensaje('❌ QR inválido: No contiene DNI', 'error');
                 return;
             }
             
-            const container = document.getElementById('contenido');
-            container.innerHTML = '<div class="loading"><p>Registrando asistencia...</p></div>';
+            mostrarMensaje('🔄 Registrando asistencia...', 'loading');
             
-            const resultado = await registrarAsistencia(dni, fecha);
+            const resultado = await registrarAsistencia(dni, fecha, supervisorActual.idSupervisor);
             
             if (resultado.success) {
-                container.innerHTML = `
-                    <div class="resultado success">
-                        <h2>✅ Asistencia registrada</h2>
-                        <p><strong>Alumno:</strong> ${resultado.alumno || ''}</p>
-                        <p><strong>Fecha:</strong> ${resultado.fecha || ''}</p>
-                        <p><strong>Hora:</strong> ${resultado.hora || ''}</p>
-                        <button onclick="location.reload()" style="margin-top:15px;">📷 Escanear otro QR</button>
-                    </div>
-                `;
+                mostrarMensaje(`✅ Asistencia registrada<br><br>
+                    <strong>Alumno:</strong> ${resultado.alumno || ''}<br>
+                    <strong>Fecha:</strong> ${resultado.fecha || ''}<br>
+                    <strong>Hora:</strong> ${resultado.hora || ''}<br>
+                    <strong>Supervisor:</strong> ${supervisorActual.nombre}<br><br>
+                    <button onclick="location.reload()" style="margin-top:10px;">📷 Escanear otro QR</button>`, 'success');
             } else {
-                container.innerHTML = `
-                    <div class="resultado error">
-                        <h2>❌ Error</h2>
-                        <p>${resultado.error || 'No se pudo registrar'}</p>
-                        <button onclick="location.reload()" style="margin-top:15px;">📷 Intentar de nuevo</button>
-                    </div>
-                `;
+                mostrarMensaje(`❌ Error: ${resultado.error || 'No se pudo registrar'}<br><br>
+                    <button onclick="location.reload()" style="margin-top:10px;">📷 Intentar de nuevo</button>`, 'error');
             }
         }
         
@@ -157,22 +269,36 @@
             }
             
             html5QrCode = new Html5Qrcode("reader");
+            document.getElementById('btnIniciar').style.display = 'none';
+            mostrarMensaje('🔍 Cámara activada. Apuntá al QR del alumno.', 'loading');
             
             try {
-                await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, procesarQR);
-                document.getElementById('btnIniciar').style.display = 'none';
+                await html5QrCode.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    procesarQR
+                );
             } catch (err) {
-                mostrarResultado('❌ No se pudo acceder a la cámara. Verificá los permisos.', 'error');
+                mostrarMensaje('❌ No se pudo acceder a la cámara. Verificá los permisos.', 'error');
+                document.getElementById('btnIniciar').style.display = 'block';
             }
         }
         
-        document.getElementById('btnIniciar').addEventListener('click', iniciarScanner);
-        
-        // Iniciar automáticamente si hay cámara
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            iniciarScanner();
+        // Iniciar: verificar si hay supervisor guardado
+        const guardado = localStorage.getItem('supervisorActual');
+        if (guardado) {
+            try {
+                supervisorActual = JSON.parse(guardado);
+                mostrarPantallaScanner();
+            } catch(e) {
+                mostrarPantallaRegistro();
+            }
         } else {
-            document.getElementById('contenido').innerHTML = '<div class="error">❌ Este navegador no soporta cámara</div>';
+            mostrarPantallaRegistro();
+        }
+        
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            mostrarMensaje('❌ Este navegador no soporta acceso a cámara.', 'error');
         }
     </script>
 </body>
