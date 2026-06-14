@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>App Supervisor</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 { text-align: center; color: #333; }
+        .info-alumno {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:disabled { opacity: 0.6; }
+        .resultado {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .loading { text-align: center; padding: 20px; }
+        .footer { text-align: center; margin-top: 20px; font-size: 0.7rem; color: #999; }
+    </style>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>📷 App Supervisor</h1>
+        <div id="contenido">
+            <div class="loading">
+                <p>Iniciando cámara...</p>
+                <div id="reader" style="width:100%; max-width:500px; margin:0 auto;"></div>
+                <button id="btnIniciar" style="margin-top:15px;">📷 Iniciar escáner</button>
+            </div>
+        </div>
+        <div class="footer">
+            Escaneá el QR que te muestra el alumno
+        </div>
+    </div>
+
+    <script>
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyKYIFV9suYC7u2cMy8wwghkuv4GEp99oRCHGj6smBQauTJ1QUQmjBmE4BPfTaVcFi_cg/exec';
+        let html5QrCode = null;
+        
+        function mostrarResultado(mensaje, tipo) {
+            const div = document.createElement('div');
+            div.className = `resultado ${tipo}`;
+            div.innerHTML = mensaje;
+            const contenido = document.getElementById('contenido');
+            const existing = contenido.querySelector('.resultado');
+            if (existing) existing.remove();
+            contenido.appendChild(div);
+            setTimeout(() => div.remove(), 5000);
+        }
+        
+        async function registrarAsistencia(dni, fecha) {
+            try {
+                const response = await fetch(`${APPS_SCRIPT_URL}?action=registrar&dni=${dni}&fecha=${fecha}`);
+                return await response.json();
+            } catch(e) {
+                return { success: false, error: e.message };
+            }
+        }
+        
+        async function procesarQR(decodedText) {
+            if (html5QrCode) {
+                await html5QrCode.stop();
+                html5QrCode = null;
+            }
+            
+            // Extraer DNI y fecha de la URL
+            let dni = null;
+            let fecha = null;
+            
+            try {
+                const url = new URL(decodedText);
+                dni = url.searchParams.get('dni');
+                fecha = url.searchParams.get('fecha');
+            } catch(e) {
+                // Si no es URL válida, probar formato simple
+                const params = new URLSearchParams(decodedText.split('?')[1]);
+                dni = params.get('dni');
+                fecha = params.get('fecha');
+            }
+            
+            if (!dni || !fecha) {
+                mostrarResultado('❌ QR inválido: No contiene DNI', 'error');
+                return;
+            }
+            
+            const container = document.getElementById('contenido');
+            container.innerHTML = '<div class="loading"><p>Registrando asistencia...</p></div>';
+            
+            const resultado = await registrarAsistencia(dni, fecha);
+            
+            if (resultado.success) {
+                container.innerHTML = `
+                    <div class="resultado success">
+                        <h2>✅ Asistencia registrada</h2>
+                        <p><strong>Alumno:</strong> ${resultado.alumno || ''}</p>
+                        <p><strong>Fecha:</strong> ${resultado.fecha || ''}</p>
+                        <p><strong>Hora:</strong> ${resultado.hora || ''}</p>
+                        <button onclick="location.reload()" style="margin-top:15px;">📷 Escanear otro QR</button>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="resultado error">
+                        <h2>❌ Error</h2>
+                        <p>${resultado.error || 'No se pudo registrar'}</p>
+                        <button onclick="location.reload()" style="margin-top:15px;">📷 Intentar de nuevo</button>
+                    </div>
+                `;
+            }
+        }
+        
+        async function iniciarScanner() {
+            const readerDiv = document.getElementById('reader');
+            if (!readerDiv) return;
+            
+            if (html5QrCode) {
+                try { await html5QrCode.stop(); } catch(e) {}
+            }
+            
+            html5QrCode = new Html5Qrcode("reader");
+            
+            try {
+                await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, procesarQR);
+                document.getElementById('btnIniciar').style.display = 'none';
+            } catch (err) {
+                mostrarResultado('❌ No se pudo acceder a la cámara. Verificá los permisos.', 'error');
+            }
+        }
+        
+        document.getElementById('btnIniciar').addEventListener('click', iniciarScanner);
+        
+        // Iniciar automáticamente si hay cámara
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            iniciarScanner();
+        } else {
+            document.getElementById('contenido').innerHTML = '<div class="error">❌ Este navegador no soporta cámara</div>';
+        }
+    </script>
+</body>
+</html>
